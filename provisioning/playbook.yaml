@@ -1,0 +1,148 @@
+
+---
+# Ansible playbook for a LEMP server.
+
+- name: Install web sever with nginx, php and mysql
+  hosts: web
+  gather_facts: yes
+  become: yes
+  vars_files:
+      - vars/main.yaml
+  tasks:
+  - name: ADD PHP7  repository
+    become: true
+    apt_repository:
+      repo: ppa:ondrej/php
+  - name: Install php7-cli
+    apt: 
+      name : "{{ item }}"
+      update_cache: yes
+      state: latest
+    loop:
+      - php7.1-fpm
+      - nginx
+      - python3-pymysql
+      - mysql-server
+      - php-mysql
+
+  - name: Sets Nginx conf file
+    template:
+      src: "/home/syanchenko/my-vagrant-project/files/nginx.conf"
+      dest: "/etc/nginx/sites-available/{{ http_conf }}"
+
+  - name: Enables new site
+    file:
+      src: "/etc/nginx/sites-available/{{ http_conf }}"
+      dest: "/etc/nginx/sites-enabled/{{ http_conf }}"
+      state: link
+    notify: Reload Nginx    
+
+  - name: Removes "default" site
+    file:
+      path: "/etc/nginx/sites-enabled/default"
+      state: absent
+    notify: Reload Nginx
+  
+  - name: Add form php for service
+    template:
+      src: "/home/syanchenko/my-vagrant-project/files/form.php"
+      dest: "form.php"
+
+  - name: install simple service systemd unit file
+    template: 
+      src: "/home/syanchenko/my-vagrant-project/simple.service"
+      dest: "/etc/systemd/system/simple.service"
+    become: true
+  
+  - name: start simple service
+    systemd: 
+      state: started 
+      name: simple 
+      daemon_reload: yes
+  - name: Sets the root password
+    mysql_user:
+      name: root
+      password: "{{ mysql_root_password }}"
+      login_unix_socket: /var/run/mysqld/mysqld.sock
+  - name: Removes all anonymous user accounts
+    mysql_user:
+      name: ''
+      host_all: yes
+      state: absent
+      login_user: root
+      login_password: "{{ mysql_root_password }}"
+# UFW Configuration
+  - name: "UFW - Allow HTTP on port {{ http_port }}"
+    ufw:
+      rule: allow
+      port: "{{ http_port }}"
+      proto: tcp
+  
+# Handlers
+
+  handlers:
+  - name: Reload Nginx
+    service:
+      name: nginx
+      state: reloaded
+
+  - name: Restart Nginx
+    service:
+      name: nginx
+      state: restarted
+      
+# Configurate server 2
+
+- name: Install Docker server
+  hosts: doc
+  gather_facts: yes
+  become: yes
+  vars_files:
+      - vars/main.yaml
+  tasks:
+  - name: Update apt packages
+    apt:
+      update_cache: "yes"
+      force_apt_get: "yes"
+  - name: Install required system packages
+    apt:
+      name: "{{ item }}"
+      state: latest
+      update_cache: yes
+    loop:
+    - curl
+    - python3-pip
+    - python3-setuptools
+    - ca-certificates
+    - gnupg-agent
+  - name: Add Docker GPG apt Key
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+  - name: Add Docker Repository
+    apt_repository: 
+      repo: deb https://download.docker.com/linux/ubuntu bionic stable
+      state: present
+      update_cache: yes
+  - name: Install docker-ce
+    apt: 
+      name: docker-ce
+      state: latest
+  - name: Create docker group
+    group:
+      name: "docker"
+      state: present 
+  - name: Adding user vagrant to docker group  
+    user:
+      name: vagrant
+      groups: "docker"
+      append: "yes"
+  - name: Add docker service to host
+    template:
+      src: "/home/syanchenko/my-vagrant-project/docker.service"
+      dest: "/etc/systemd/system/docker.funbox.service"
+  - name: Enable docker service
+    systemd: 
+      state: started 
+      name: docker.funbox 
+      daemon_reload: yes

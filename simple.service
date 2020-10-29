@@ -1,0 +1,12 @@
+[Unit]
+Description=Simple PHP Service
+After=php7.1-fpm.service
+Requires=nginx.service
+
+[Service]
+Type=simple
+Restart=always
+ExecStart=/usr/bin/sudo /bin/cp /home/vagrant/form.php /var/www/html/
+
+[Install]
+WantedBy=multi-user.target
